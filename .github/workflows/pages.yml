@@ -1,0 +1,43 @@
+name: Publish to Pages
+
+# The NMG OHS dashboard's build pushes here every 5 minutes. Publishing through Actions avoids
+# the 10-builds-an-hour limit that publishing straight from the branch has.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true      # only the newest build matters
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url || steps.deployment_retry.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09   # v5
+      - run: mkdir _site && cp index.html ozland.html _site/
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9   # v5.0.0
+        with:
+          path: _site
+      # GitHub can take a few seconds to list a just-uploaded artifact; deploy-pages asking
+      # straight away got "Found 0 artifact(s)" on ~1 in 4 publishes (2026-11-20..24), each one a
+      # run-failed email. Wait, try, and on that miss wait again and retry once. The first
+      # attempt fails before it creates a deployment, so the retry is safe.
+      - run: sleep 10
+      - id: deployment
+        continue-on-error: true
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346   # v5.0.1
+      - if: steps.deployment.outcome == 'failure'
+        run: sleep 20
+      - id: deployment_retry
+        if: steps.deployment.outcome == 'failure'
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346   # v5.0.1
